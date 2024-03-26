@@ -23,6 +23,17 @@ logging.basicConfig(level=logging.INFO,
                     ])
 
 
+def fetch_local_content(
+        html_file_path='./111_academic_year_hsinchu_junior_high_school_acceptance_rate.html'):
+    # Opening the html file
+    html_file = open(html_file_path, "r", encoding='utf-8')
+    # Reading the file
+    response_text = html_file.read()
+    # response_text = response.text
+    soup = BeautifulSoup(response_text, "html.parser")
+    return soup
+
+
 def fetch_webpage_content(url):
     try:
         response = requests.get(url)

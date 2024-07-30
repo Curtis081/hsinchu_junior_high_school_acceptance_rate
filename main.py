@@ -9,7 +9,6 @@ import sys
 import logging
 import warnings
 
-
 # Constants
 ACCEPTANCE_RATE_COL_ORIGINAL = '錄取率'
 ACCEPTANCE_RATE_COL = '錄取率%'
@@ -23,15 +22,15 @@ logging.basicConfig(level=logging.INFO,
                     ])
 
 
-def fetch_local_content(
-        html_file_path='./111_academic_year_hsinchu_junior_high_school_acceptance_rate.html'):
-    # Opening the html file
-    html_file = open(html_file_path, "r", encoding='utf-8')
-    # Reading the file
-    response_text = html_file.read()
-    # response_text = response.text
-    soup = BeautifulSoup(response_text, "html.parser")
-    return soup
+def fetch_local_content(html_file_path='./111_academic_year_hsinchu_junior_high_school_acceptance_rate.html'):
+    try:
+        with open(html_file_path, "r", encoding='utf-8') as html_file:
+            response_text = html_file.read()
+        soup = BeautifulSoup(response_text, "html.parser")
+        return soup
+    except Exception as e:
+        logging.error(f'Failed to fetch local content due to: {e}')
+        return None
 
 
 def fetch_webpage_content(url):
@@ -88,30 +87,29 @@ def convert_acceptance_rate(excel_output_file_name):
         df = df.sort_values(by=ACCEPTANCE_RATE_COL, ascending=False)
         df = df.drop([ACCEPTANCE_RATE_COL_ORIGINAL], axis=1)
 
-        logging.info(f'Successfully converted acceptance rates in the DataFrame.')
+        logging.info('Successfully converted acceptance rates in the DataFrame.')
         return df, excel_output_file_name
     except Exception as e:
         logging.error(f'Failed to convert acceptance rates due to: {e}')
-        return None
+        return None, None
 
 
 def style_and_write_to_excel(df, excel_output_file_name, sheet_name="Sheet1"):
     try:
         sf = StyleFrame(df, styler_obj=Styler(bg_color=None, bold=False, font='Arial', font_size=10.0, font_color=None,
-                                              number_format='General', protection=False, underline=None,
-                                              border_type='thin',
+                                              number_format='General', protection=False, underline=None, border_type='thin',
                                               horizontal_alignment='left', vertical_alignment='center', wrap_text=True,
-                                              shrink_to_fit=True, fill_pattern_type='solid', indent=0.0,
-                                              comment_author=None,
+                                              shrink_to_fit=True, fill_pattern_type='solid', indent=0.0, comment_author=None,
                                               comment_text=None, text_rotation=0))
 
         with StyleFrame.ExcelWriter(excel_output_file_name) as writer:
             sf.to_excel(writer, index=False, sheet_name=sheet_name, best_fit=list(df.columns.values))
 
-        logging.info(f'Successfully styled and write DataFrame to Excel: {excel_output_file_name}')
+        logging.info(f'Successfully styled and wrote DataFrame to Excel: {excel_output_file_name}')
         return sheet_name
     except Exception as e:
         logging.error(f'Failed to style and write DataFrame to Excel due to: {e}')
+        return None
 
 
 def convert_excel_to_png(excel_file_name, post_title_html, sheet_name, output_folder):
@@ -140,9 +138,17 @@ def hsinchu_junior_high_school_acceptance_rate(academic_year):
     output_folder = create_output_folder()
 
     excel_file_name = create_and_save_excel(soup, post_title_html, output_folder)
+    if excel_file_name is None:
+        return
+
     df, excel_output_file_name = convert_acceptance_rate(excel_file_name)
+    if df is None or excel_output_file_name is None:
+        return
 
     sheet_name = style_and_write_to_excel(df, excel_output_file_name)
+    if sheet_name is None:
+        return
+
     convert_excel_to_png(excel_output_file_name, post_title_html, sheet_name, output_folder)
 
     print('Process completed successfully.')

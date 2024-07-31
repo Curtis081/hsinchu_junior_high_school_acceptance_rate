@@ -9,155 +9,150 @@ import sys
 import logging
 import warnings
 
-# Constants
-ACCEPTANCE_RATE_COL_ORIGINAL = '錄取率'
-ACCEPTANCE_RATE_COL = '錄取率%'
 
-# Setup logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler("app.log"),
-                        logging.StreamHandler(sys.stdout)
-                    ])
+class AcceptanceRateProcessor:
+    ACCEPTANCE_RATE_COL_ORIGINAL = '錄取率'
+    ACCEPTANCE_RATE_COL = '錄取率%'
 
+    def __init__(self, academic_year, output_folder='output_files'):
+        self.academic_year = academic_year
+        self.output_folder = output_folder
+        self.url = f'https://shirley.tw/{self.academic_year}y-hsinchu-exam/'
+        self.excel_file_name = None
+        self.post_title_html = None
+        self.df = None
 
-def fetch_local_content(html_file_path='./111_academic_year_hsinchu_junior_high_school_acceptance_rate.html'):
-    try:
-        with open(html_file_path, "r", encoding='utf-8') as html_file:
-            response_text = html_file.read()
-        soup = BeautifulSoup(response_text, "html.parser")
-        return soup
-    except Exception as e:
-        logging.error(f'Failed to fetch local content due to: {e}')
-        return None
+        logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s - %(levelname)s - %(message)s',
+                            handlers=[
+                                logging.FileHandler("app.log"),
+                                logging.StreamHandler(sys.stdout)
+                            ])
+        self._create_output_folder()
 
+    def _create_output_folder(self):
+        if not os.path.exists(self.output_folder):
+            os.makedirs(self.output_folder)
 
-def fetch_webpage_content(url):
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, "html.parser")
+    def fetch_local_content(self, html_file_path='./111_academic_year_hsinchu_junior_high_school_acceptance_rate.html'):
+        try:
+            with open(html_file_path, "r", encoding='utf-8') as html_file:
+                response_text = html_file.read()
+            soup = BeautifulSoup(response_text, "html.parser")
+            return soup
+        except Exception as e:
+            logging.error(f'Failed to fetch local content due to: {e}')
+            return None
 
-        post_title_html = soup.find('h1')
-        if post_title_html is None:
-            logging.error('404: Page not found. Could not find the title <h1> tag in the HTML.')
+    def fetch_webpage_content(self):
+        try:
+            response = requests.get(self.url)
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            post_title_html = soup.find('h1')
+            if post_title_html is None:
+                logging.error('404: Page not found. Could not find the title <h1> tag in the HTML.')
+                return None, None
+
+            self.post_title_html = post_title_html.text
+            return soup, self.post_title_html
+        except requests.RequestException as e:
+            logging.error(f'Failed to fetch webpage content due to: {e}')
             return None, None
 
-        title = post_title_html.text
-        return soup, title
-    except requests.RequestException as e:
-        logging.error(f'Failed to fetch webpage content due to: {e}')
-        return None, None
+    def create_and_save_excel(self, soup):
+        # Ignore DeprecationWarning
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module='openpyxl')
 
+        try:
+            self.excel_file_name = os.path.join(self.output_folder, self.post_title_html + '.xlsx')
 
-def create_and_save_excel(soup, title, output_folder):
-    # Ignore DeprecationWarning
-    warnings.filterwarnings("ignore", category=DeprecationWarning, module='openpyxl')
+            workbook = Workbook(self.excel_file_name)
+            worksheet = workbook.add_worksheet()
 
-    try:
-        excel_output_file_name = os.path.join(output_folder, title + '.xlsx')
+            table_html = soup.find('tbody')
+            td_htmls = table_html.find_all('td')
 
-        workbook = Workbook(excel_output_file_name)
-        worksheet = workbook.add_worksheet()
+            for td_html in td_htmls:
+                data_cell_id = td_html.get('data-cell-id')
+                data_original_value = td_html.get('data-original-value')
+                worksheet.write(data_cell_id, data_original_value)
 
-        table_html = soup.find('tbody')
-        td_htmls = table_html.find_all('td')
+            workbook.close()
+            logging.info(f'Successfully created and saved Excel file: {self.excel_file_name}')
+            return self.excel_file_name
+        except Exception as e:
+            logging.error(f'Failed to create and save Excel file due to: {e}')
+            return None
 
-        for td_html in td_htmls:
-            data_cell_id = td_html.get('data-cell-id')
-            data_original_value = td_html.get('data-original-value')
-            worksheet.write(data_cell_id, data_original_value)
+    def convert_acceptance_rate(self):
+        try:
+            self.df = pd.read_excel(self.excel_file_name)
 
-        workbook.close()
-        logging.info(f'Successfully created and saved Excel file: {excel_output_file_name}')
-        return excel_output_file_name
-    except Exception as e:
-        logging.error(f'Failed to create and save Excel file due to: {e}')
-        return None
+            acceptance_rate_slice_percentage = self.df[self.ACCEPTANCE_RATE_COL_ORIGINAL].str.slice(stop=-1)
+            acceptance_rate = pd.to_numeric(acceptance_rate_slice_percentage, errors='coerce')
+            self.df[self.ACCEPTANCE_RATE_COL] = acceptance_rate
 
+            self.df = self.df.sort_values(by=self.ACCEPTANCE_RATE_COL, ascending=False)
+            self.df = self.df.drop([self.ACCEPTANCE_RATE_COL_ORIGINAL], axis=1)
 
-def convert_acceptance_rate(excel_output_file_name):
-    try:
-        df = pd.read_excel(excel_output_file_name)
+            logging.info('Successfully converted acceptance rates in the DataFrame.')
+            return self.df, self.excel_file_name
+        except Exception as e:
+            logging.error(f'Failed to convert acceptance rates due to: {e}')
+            return None, None
 
-        acceptance_rate_slice_percentage = df[ACCEPTANCE_RATE_COL_ORIGINAL].str.slice(stop=-1)
-        acceptance_rate = pd.to_numeric(acceptance_rate_slice_percentage, errors='coerce')
-        df[ACCEPTANCE_RATE_COL] = acceptance_rate
+    def style_and_write_to_excel(self, sheet_name="Sheet1"):
+        try:
+            sf = StyleFrame(self.df, styler_obj=Styler(bg_color=None, bold=False, font='Arial', font_size=10.0, font_color=None,
+                                                      number_format='General', protection=False, underline=None, border_type='thin',
+                                                      horizontal_alignment='left', vertical_alignment='center', wrap_text=True,
+                                                      shrink_to_fit=True, fill_pattern_type='solid', indent=0.0, comment_author=None,
+                                                      comment_text=None, text_rotation=0))
 
-        df = df.sort_values(by=ACCEPTANCE_RATE_COL, ascending=False)
-        df = df.drop([ACCEPTANCE_RATE_COL_ORIGINAL], axis=1)
+            with StyleFrame.ExcelWriter(self.excel_file_name) as writer:
+                sf.to_excel(writer, index=False, sheet_name=sheet_name, best_fit=list(self.df.columns.values))
 
-        logging.info('Successfully converted acceptance rates in the DataFrame.')
-        return df, excel_output_file_name
-    except Exception as e:
-        logging.error(f'Failed to convert acceptance rates due to: {e}')
-        return None, None
+            logging.info(f'Successfully styled and wrote DataFrame to Excel: {self.excel_file_name}')
+            return sheet_name
+        except Exception as e:
+            logging.error(f'Failed to style and write DataFrame to Excel due to: {e}')
+            return None
 
+    def convert_excel_to_png(self, sheet_name):
+        output_png_file_name = os.path.join(self.output_folder, self.post_title_html + '.png')
+        try:
+            excel2img.export_img(self.excel_file_name, output_png_file_name, sheet_name, None)
+            logging.info(f'Successfully converted {self.excel_file_name} to {output_png_file_name}')
+        except Exception as e:
+            logging.error(f'Error converting {self.excel_file_name} to {output_png_file_name}: {e}')
 
-def style_and_write_to_excel(df, excel_output_file_name, sheet_name="Sheet1"):
-    try:
-        sf = StyleFrame(df, styler_obj=Styler(bg_color=None, bold=False, font='Arial', font_size=10.0, font_color=None,
-                                              number_format='General', protection=False, underline=None, border_type='thin',
-                                              horizontal_alignment='left', vertical_alignment='center', wrap_text=True,
-                                              shrink_to_fit=True, fill_pattern_type='solid', indent=0.0, comment_author=None,
-                                              comment_text=None, text_rotation=0))
+    def process(self):
+        soup, post_title_html = self.fetch_webpage_content()
+        if soup is None or post_title_html is None:
+            return
 
-        with StyleFrame.ExcelWriter(excel_output_file_name) as writer:
-            sf.to_excel(writer, index=False, sheet_name=sheet_name, best_fit=list(df.columns.values))
+        excel_file_name = self.create_and_save_excel(soup)
+        if excel_file_name is None:
+            return
 
-        logging.info(f'Successfully styled and wrote DataFrame to Excel: {excel_output_file_name}')
-        return sheet_name
-    except Exception as e:
-        logging.error(f'Failed to style and write DataFrame to Excel due to: {e}')
-        return None
+        df, excel_output_file_name = self.convert_acceptance_rate()
+        if df is None or excel_output_file_name is None:
+            return
 
+        sheet_name = self.style_and_write_to_excel()
+        if sheet_name is None:
+            return
 
-def convert_excel_to_png(excel_file_name, post_title_html, sheet_name, output_folder):
-    output_png_file_name = os.path.join(output_folder, post_title_html + '.png')
-    try:
-        excel2img.export_img(excel_file_name, output_png_file_name, sheet_name, None)
-        logging.info(f'Successfully converted {excel_file_name} to {output_png_file_name}')
-    except Exception as e:
-        logging.error(f'Error converting {excel_file_name} to {output_png_file_name}: {e}')
-
-
-def create_output_folder():
-    output_folder = 'output_files'
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    return output_folder
-
-
-def hsinchu_junior_high_school_acceptance_rate(academic_year):
-    url = f'https://shirley.tw/{academic_year}y-hsinchu-exam/'
-
-    soup, post_title_html = fetch_webpage_content(url)
-    if soup is None or post_title_html is None:
-        return
-
-    output_folder = create_output_folder()
-
-    excel_file_name = create_and_save_excel(soup, post_title_html, output_folder)
-    if excel_file_name is None:
-        return
-
-    df, excel_output_file_name = convert_acceptance_rate(excel_file_name)
-    if df is None or excel_output_file_name is None:
-        return
-
-    sheet_name = style_and_write_to_excel(df, excel_output_file_name)
-    if sheet_name is None:
-        return
-
-    convert_excel_to_png(excel_output_file_name, post_title_html, sheet_name, output_folder)
-
-    print('Process completed successfully.')
+        self.convert_excel_to_png(sheet_name)
+        print('Process completed successfully.')
 
 
 if __name__ == '__main__':
     for academic_year in range(110, 113):
         try:
-            hsinchu_junior_high_school_acceptance_rate(str(academic_year))
+            processor = AcceptanceRateProcessor(str(academic_year))
+            processor.process()
         except Exception as e:
             logging.error(f'Error processing academic year {academic_year}: {e}')
             continue

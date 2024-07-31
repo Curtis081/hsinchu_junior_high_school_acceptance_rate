@@ -30,6 +30,15 @@ The script will create an "output_files" folder and store Excel files and corres
 #### 輸出
 該腳本將創建一個名為 "output_files" 的文件夾，並在其中存儲Excel文件和相應的PNG圖像。
 
+<img src="readme_files/crawler_process.png" alt="crawler process" width="500">
+<img src="readme_files/output_example.png" alt="output example" width="500">
+
+### 聲明(Disclaimer)
+
+The data collected by me is solely for experimental/research purposes. If there are any issues, please inform me. Any data collection activities using this code are the sole responsibility of the user.
+
+本人收集的數據僅用於實驗/研究目的，如有問題煩請告知，使用本代碼進行的任何數據收集活動，責任由使用者自行承擔。
+
 ## Author Information
 
 ### Name
